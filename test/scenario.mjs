@@ -9,7 +9,12 @@ async function rpc(method, params, key) {
   });
   return res.json();
 }
+const RECIPE_WRITES = ["add_recipe", "update_recipe", "fork_recipe"];
 async function tool(name, args, key) {
+  // 出典の申告は、試験で明示しない限り sources の中身に合わせる
+  if (RECIPE_WRITES.includes(name) && !("outside_sources" in args)) {
+    args = { ...args, outside_sources: args.recipe?.sources?.length ? "listed" : "none" };
+  }
   const r = await rpc("tools/call", { name, arguments: args }, key);
   const c = r.result;
   return { ok: !c.isError, data: c.structuredContent, text: c.content[0].text };
@@ -25,7 +30,7 @@ const PIE = "western-sweets/pie/dutch-apple-pie/takehiro-2026-11-07";
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
 expect("initialize", init.result?.serverInfo?.name === "recipe-hub");
 const list = await rpc("tools/list", {});
-expect("tools/list に14", list.result.tools.length === 14);
+expect("tools/list に15", list.result.tools.length === 15);
 expect("試作と取り込みの操作はない", !list.result.tools.some((t) => /branch|merge/.test(t.name)));
 
 let r = await tool("search_recipes", { query: "りんご パイ" });
@@ -130,6 +135,84 @@ const kitchenBase = ["stove", "pot", "pie-dish", "baking-sheet", "knife", "peele
 expect("オーブンがない家庭では作れないと判定", found.every((x) => !canCook(x.needs, kitchenBase).ok));
 expect("オーブンレンジがあれば作れると判定", found.every((x) => canCook(x.needs, [...kitchenBase, "microwave-oven"]).ok));
 expect("オーブントースターなら互換表で作れると判定", found.every((x) => canCook(x.needs, [...kitchenBase, "toaster-oven"]).ok));
+
+// ---- 出典の念押し ----
+const SRC = [{ name: "例のサイト", url: "https://example.com/pie", accessed: "2026-11-07" }];
+r = await tool("add_recipe", { recipe: input({ title: "申告なし" }), outside_sources: undefined }, T);
+expect("出典の申告がない登録は断られる", !r.ok && r.text.includes("outside_sources") && r.text.includes("利用者に確認"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "出典が空" }), outside_sources: "listed" }, T);
+expect("出典ありと申告して sources が空だと断られる", !r.ok && r.text.includes("sources が空"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "食い違い", sources: SRC }), outside_sources: "none" }, T);
+expect("出典なしと申告して sources があると断られる", !r.ok && r.text.includes('"listed"'), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "リンクなし", sources: [{ name: "ある本", accessed: "2026-11-07" }] }), outside_sources: "listed" }, T);
+expect("リンクのない出典は断られる", !r.ok && r.text.includes("url"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（出典つき）", sources: SRC }), outside_sources: "listed" }, T);
+expect("出典つきで登録できる（念押しは付かない）", r.ok && !r.data.sources_note, r.text);
+const withSrc = r.data?.id;
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（自作）" }), outside_sources: "none" }, T);
+expect("自分で編み出したレシピは出典なしで登録でき、念押しが返る", r.ok && r.data.sources_note?.includes("update_recipe"), r.text);
+r = await tool("update_recipe", { id: withSrc, recipe: input({ title: "ダッチアップルパイ（出典つき）" }), change_note: "x", outside_sources: undefined }, T);
+expect("改訂でも出典の申告が要る", !r.ok && r.text.includes("outside_sources"), r.text);
+r = await tool("fork_recipe", { source_id: withSrc, recipe: input({ title: "出典を落としたフォーク" }), outside_sources: "none" }, H);
+expect("フォークで元の出典を落とすと断られる", !r.ok && r.text.includes("https://example.com/pie"), r.text);
+r = await tool("fork_recipe", { source_id: withSrc, recipe: input({ title: "出典を残したフォーク", sources: [...SRC, { name: "別の本", url: "https://example.com/book", accessed: "2026-11-07" }] }), outside_sources: "listed" }, H);
+expect("元の出典を残したフォークは登録できる", r.ok, r.text);
+
+// ---- 一部だけの変更（patch_recipe） ----
+const before = (await tool("get_recipe", { id: withSrc })).data;
+const nSteps = before.recipe.steps.length;
+r = await tool("patch_recipe", { id: withSrc, change_note: "参照日を直す", sources: { update: [{ url: SRC[0].url, accessed: "2026-11-13" }] } }, T);
+expect("出典の日付1つだけを直せる", r.ok && r.data.changed.length === 1 && r.data.changed[0].includes("accessed"), r.text);
+let now = (await tool("get_recipe", { id: withSrc })).data;
+expect("ほかの項目は変わらない",
+  now.recipe.sources[0].accessed === "2026-11-13" && now.recipe.sources[0].name === SRC[0].name
+  && JSON.stringify(now.recipe.ingredients) === JSON.stringify(before.recipe.ingredients)
+  && JSON.stringify(now.recipe.steps) === JSON.stringify(before.recipe.steps) && now.notes === before.notes, r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", ingredients: { update: [{ id: "flour", amount: 99 }] } }, T);
+expect("同じ材料が複数のまとまりにあると group を求められる", !r.ok && r.text.includes("group"), r.text);
+const flourGroup = before.recipe.ingredients.find((g) => g.items.some((x) => x.id === "flour")).group;
+r = await tool("patch_recipe", {
+  id: withSrc, change_note: "分量と工程を調整",
+  set: { title: "ダッチアップルパイ（出典つき・改）", notes: "一部だけ直した版" },
+  ingredients: {
+    update: [{ id: "cinnamon", amount: 2 }, { id: "flour", group: flourGroup, amount: 33, note: null }],
+    add: [{ group: "仕上げ", id: "granulated-sugar", amount: 1, unit: "tsp" }],
+    remove: [{ id: "cardamom" }],
+  },
+  steps: { update: [{ step: 1, title: "最初の工程（直した）" }], add: [{ after: 0, title: "下準備", text: "材料を量る" }, { after: nSteps, title: "仕上げ", text: "砂糖をふる" }], remove: [2] },
+  equipment: { update: [{ id: "pie-dish", note: "直径21cm" }] },
+}, T);
+expect("材料・工程・道具・題名をまとめて直せる", r.ok && r.data.changed.length === 11, r.text);
+now = (await tool("get_recipe", { id: withSrc })).data;
+const flat = now.recipe.ingredients.flatMap((g) => g.items.map((x) => ({ ...x, group: g.group })));
+expect("材料の変更が反映される",
+  flat.find((x) => x.id === "cinnamon").amount === 2 && flat.find((x) => x.id === "flour" && x.group === flourGroup).amount === 33
+  && !flat.some((x) => x.id === "cardamom") && flat.some((x) => x.group === "仕上げ" && x.id === "granulated-sugar" && x.name), JSON.stringify(flat));
+expect("工程の番号は変更前の番号で数える",
+  now.recipe.steps.length === nSteps + 1 && now.recipe.steps[0].title === "下準備" && now.recipe.steps[1].title === "最初の工程（直した）"
+  && now.recipe.steps[2].title === before.recipe.steps[2].title && now.recipe.steps.at(-1).title === "仕上げ", JSON.stringify(now.recipe.steps.map((x) => x.title)));
+expect("題名・メモ・道具の変更が反映され、作者と作成日はそのまま",
+  now.recipe.title.endsWith("・改）") && now.notes === "一部だけ直した版" && now.recipe.equipment.find((x) => x.id === "pie-dish").note === "直径21cm"
+  && now.recipe.author === before.recipe.author && now.recipe.created === before.recipe.created);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", ingredients: { update: [{ id: "cinnamon", unit: "ポンド" }] }, steps: { update: [{ step: 1, title: "消えてはいけない" }] } }, T);
+expect("様式に合わなくなる変更は断られる", !r.ok && r.text.includes("ポンド"), r.text);
+expect("断られたときは何も変わらない", (await tool("get_recipe", { id: withSrc })).data.recipe.steps[1].title === "最初の工程（直した）");
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", steps: { update: [{ step: 99, minutes: 5 }] }, ingredients: { remove: [{ id: "wasabi" }] } }, T);
+expect("ない工程・ない材料の指定は断られる", !r.ok && r.text.includes("工程の番号") && r.text.includes("wasabi"), r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", set: { genre: "japanese" } }, T);
+expect("置き場所を決める項目は変えられない", !r.ok && r.text.includes("fork_recipe"), r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", sources: { remove: [SRC[0].url] } }, T);
+expect("出典を空にする変更は申告なしでは断られる", !r.ok && r.text.includes("outside_sources"), r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", sources: { add: [{ name: "リンクなし", accessed: "2026-11-13" }] } }, T);
+expect("リンクのない出典は足せない", !r.ok && r.text.includes("url"), r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "出典を足す", sources: { add: [{ name: "別のサイト", url: "https://example.com/other", accessed: "2026-11-13" }], update: [{ url: SRC[0].url, new_url: "https://example.com/pie-v2" }] } }, T);
+expect("出典を足し、リンクを直せる", r.ok && r.data.changed.length === 2, r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", set: { title: "ダッチアップルパイ（出典つき・改）" } }, T);
+expect("変更がなければ断られる", !r.ok && r.text.includes("変更がありません"), r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", set: { title: "他人が変更" } }, H);
+expect("他人のレシピは一部だけでも変えられない", !r.ok && r.text.includes("fork_recipe"), r.text);
+r = await tool("patch_recipe", { id: withSrc, change_note: "x", set: { title: "鍵なし" } });
+expect("鍵なしでは一部の変更もできない", !r.ok && r.text.includes("鍵"), r.text);
 
 // ---- 招待と鍵 ----
 // 何度実行しても通るよう、名前は実行ごとに変える

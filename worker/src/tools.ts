@@ -5,6 +5,7 @@ import {
 } from "../../shared/recipe.ts";
 import { getFile, GitHubError, putFile, type GitHubEnv } from "./github.ts";
 import { createInvite, listWriters, markOnboarded, redeemInvite, revokeWriter, type Writer } from "./keys.ts";
+import { applyEdits } from "./edit.ts";
 import { masterItemSchema, recipeInputSchema, substitutionSchema } from "./schema.ts";
 import {
   MASTER_PATHS, normName, parseList, serializeList, validateMasterItem, validateSubstitution,
@@ -98,8 +99,58 @@ export const TOOL_DEFS = [
   },
   {
     name: "update_recipe",
-    description: "Revise one of YOUR OWN recipes. Send the complete new recipe content (not a diff). Keep the existing sources, and add a source with its link for anything newly taken from a website, video, book or another person's recipe. Requires a write key.",
+    description: "Revise one of YOUR OWN recipes by sending the complete new recipe content (not a diff). Use this for a large rewrite; for a small change (an amount, a source, one step) use patch_recipe instead. Keep the existing sources, and add a source with its link for anything newly taken from a website, video, book or another person's recipe. Requires a write key.",
     inputSchema: { type: "object", required: ["id", "recipe", "change_note", "outside_sources"], properties: { id: idArg, recipe: recipeInputSchema, change_note: changeNote, outside_sources: outsideSources } },
+  },
+  {
+    name: "patch_recipe",
+    description: "Change only part of one of YOUR OWN recipes; everything you do not mention stays exactly as it is. Prefer this over update_recipe for small changes such as fixing an amount, a source's date or link, a step's time or temperature, or adding one ingredient. Call get_recipe first so that ids, groups and step numbers are current. All changes in one call are applied together or not at all, and the result must still pass the format check. The result lists what was changed. Requires a write key.",
+    inputSchema: {
+      type: "object", required: ["id", "change_note"],
+      properties: {
+        id: idArg, change_note: changeNote,
+        set: {
+          type: "object",
+          description: "Replace whole top-level fields: title, summary, yield, tags, notes, genre_name, group_name, dish_name (and, if you really want to replace a whole list: sources, equipment, ingredients, steps). null removes summary or tags. genre, group and dish cannot be changed.",
+        },
+        sources: {
+          type: "object",
+          description: "Sources are identified by their url.",
+          properties: {
+            add: { type: "array", items: recipeInputSchema.properties.sources.items },
+            update: { type: "array", description: "Fields to change on an existing source, e.g. { url, accessed: '2026-11-13' }. Use new_url to change the link itself.", items: { type: "object", required: ["url"], properties: { url: { type: "string", description: "Current url of the source to change" }, new_url: { type: "string" }, name: { type: "string" }, accessed: { type: "string", description: "YYYY-MM-DD" } } } },
+            remove: { type: "array", description: "urls of sources to remove. Only remove a source that was listed by mistake.", items: { type: "string" } },
+          },
+        },
+        ingredients: {
+          type: "object",
+          description: "Ingredients are identified by their master id; add 'group' when the same id appears in more than one group.",
+          properties: {
+            update: { type: "array", description: "Fields to change on an existing ingredient, e.g. { id: 'cinnamon', amount: 1.5 }. Only the fields you give change; null removes an optional field.", items: { type: "object", required: ["id"], properties: { id: { type: "string" }, group: { type: "string" } } } },
+            add: { type: "array", description: "New ingredients: the group label plus the same fields as in add_recipe (id, unit, amount, ...). A new group is created if the label does not exist.", items: { type: "object", required: ["group", "id", "unit"], properties: { group: { type: "string" }, id: { type: "string" }, unit: { type: "string" } } } },
+            remove: { type: "array", items: { type: "object", required: ["id"], properties: { id: { type: "string" }, group: { type: "string" } } } },
+          },
+        },
+        steps: {
+          type: "object",
+          description: "Steps are identified by their number in the CURRENT recipe (1 = first step), also when several steps are added or removed in the same call.",
+          properties: {
+            update: { type: "array", description: "Fields to change on an existing step, e.g. { step: 8, minutes: 40, oven_c: 190 }. null removes an optional field.", items: { type: "object", required: ["step"], properties: { step: { type: "integer", minimum: 1 } } } },
+            add: { type: "array", description: "New steps: 'after' is the number of the current step it follows (0 = put it first), plus title, text and the other step fields.", items: { type: "object", required: ["after", "title", "text"], properties: { after: { type: "integer", minimum: 0 }, title: { type: "string" }, text: { type: "string" } } } },
+            remove: { type: "array", items: { type: "integer", minimum: 1 } },
+          },
+        },
+        equipment: {
+          type: "object",
+          properties: {
+            add: { type: "array", items: recipeInputSchema.properties.equipment.items },
+            update: { type: "array", description: "Change the note of an existing item, e.g. { id: 'pie-dish', note: '直径21cm' }", items: { type: "object", required: ["id"], properties: { id: { type: "string" }, note: { type: ["string", "null"] } } } },
+            remove: { type: "array", description: "Equipment ids to remove", items: { type: "string" } },
+          },
+        },
+        outside_sources: { ...outsideSources, description: "Needed only when this change leaves the recipe with no sources at all: send 'none' to confirm that the user invented it themselves. Otherwise omit." },
+      },
+    },
   },
   {
     name: "fork_recipe",
@@ -337,6 +388,36 @@ export async function updateRecipe(env: Env, a: any, author: string) {
   return { id: old.id, commit, ...sourcesReminder(a) };
 }
 
+export async function patchRecipe(env: Env, a: any, author: string) {
+  const cur = await loadRecipe(env, a.id);
+  const old = cur.file.recipe;
+  if (old.author !== author) throw new ToolError(`このレシピの作者は ${old.author} です。自分のレシピ以外は fork_recipe で自分の版を作ってください`);
+  if (!a.change_note) throw new ToolError("change_note（変更の理由）が必要です");
+  const edit = applyEdits(old, cur.file.notes, a);
+  if (!edit.errors.length && !edit.changed.length) {
+    throw new ToolError("変更がありません。set / sources / ingredients / steps / equipment のどれかで、変えたいところを指定してください");
+  }
+  const recipe = { ...edit.recipe, updated: today(env) } as Recipe;
+  const idx = await loadMasterIndex(env);
+  fillNames(recipe, idx);
+  // 出典: 申告があれば照らし合わせる。なくても、出典を空にする変更は「自分で編み出した」の申告を求める
+  const srcErrors = a.outside_sources !== undefined ? checkSources(a, recipe)
+    : (old.sources?.length ?? 0) > 0 && (recipe.sources?.length ?? 0) === 0
+      ? [`この変更で出典が1つもなくなります。間違って書いた出典を消す場合で、利用者が自分で編み出したレシピなら outside_sources を "none" にして送り直してください。参考にした出典があるなら、消さずに残してください`]
+      : [];
+  const errors = [...edit.errors, ...srcErrors];
+  // 指定そのものに誤りがあるときは、それだけを伝える（当てそこねた結果の様式違いまで並べると分かりにくい）
+  if (!edit.errors.length) errors.push(...validateRecipe(recipe, old.id, idx), ...(await checkCategoryNames(env, recipe)));
+  if (errors.length) {
+    throw new ToolError(`何も変更しませんでした。直して送り直してください:\n- ${errors.join("\n- ")}`);
+  }
+  const file = { recipe, notes: edit.notes };
+  const raw = serializeRecipeFile(file);
+  const { sha, commit } = await putFile(env, idToPath(old.id), raw, commitMessage("update", recipe, a.change_note), cur.sha);
+  await upsertRow(env, file, raw, sha);
+  return { id: old.id, changed: edit.changed, commit, ...sourcesReminder(a) };
+}
+
 export async function forkRecipe(env: Env, a: any, author: string) {
   const src = (await loadRecipe(env, a.source_id)).file.recipe;
   const { body, notes } = cleanInput(a.recipe);
@@ -427,7 +508,7 @@ export async function addSubstitution(env: Env, a: any, author: string) {
   return { added: item, commit };
 }
 
-export const WRITE_TOOLS = new Set(["add_recipe", "update_recipe", "fork_recipe", "add_master_item", "add_substitution"]);
+export const WRITE_TOOLS = new Set(["add_recipe", "update_recipe", "patch_recipe", "fork_recipe", "add_master_item", "add_substitution"]);
 
 export async function callTool(env: Env, name: string, args: any, writer: Writer | null, origin: string) {
   const author = writer?.author ?? null;
@@ -444,9 +525,11 @@ export async function callTool(env: Env, name: string, args: any, writer: Writer
     case "add_substitution": return addSubstitution(env, args, author!);
     case "add_recipe":
     case "update_recipe":
+    case "patch_recipe":
     case "fork_recipe": {
       const out = name === "add_recipe" ? await addRecipe(env, args, author!)
         : name === "update_recipe" ? await updateRecipe(env, args, author!)
+        : name === "patch_recipe" ? await patchRecipe(env, args, author!)
         : await forkRecipe(env, args, author!);
       await markOnboarded(env, writer); // これ以降、この鍵で他の人を招待できる
       return out;

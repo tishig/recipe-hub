@@ -1,10 +1,10 @@
 // 書き込み用の鍵と招待
 // - 管理者の鍵: 秘密の値 WRITE_KEYS（{"<鍵>": "<作者名>"}）。全員の鍵と招待を見られ、取り消せる。
 // - 招待で配る鍵: D1 の write_keys。ハッシュ値だけを保存し、鍵そのものは発行時に1回だけ返す。
-//   鍵を受け取って接続できた人は、自分でも他の人を招待できる。見られる・取り消せるのは自分が招待した相手だけ。
+//   その鍵でレシピを1件でも登録・改訂した人は、自分でも他の人を招待できる。一覧と取り消しは管理者だけ。
 import { ToolError, type Env } from "./tools.ts";
 
-export interface Writer { author: string; admin: boolean }
+export interface Writer { author: string; admin: boolean; keyHash?: string } // keyHash は招待で配った鍵のときだけ
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_DAYS = 7;
@@ -31,9 +31,10 @@ export async function resolveWriter(env: Env, key: string | null): Promise<Write
   const map = admins(env);
   if (Object.prototype.hasOwnProperty.call(map, key)) return { author: map[key], admin: true };
   try {
+    const keyHash = await sha256(key);
     const row = await env.DB.prepare("SELECT author FROM write_keys WHERE key_hash = ? AND revoked IS NULL")
-      .bind(await sha256(key)).first<{ author: string }>();
-    return row ? { author: row.author, admin: false } : null;
+      .bind(keyHash).first<{ author: string }>();
+    return row ? { author: row.author, admin: false, keyHash } : null;
   } catch {
     return null; // 表がまだ無い（プログラムの公開が表の作成より先になった）場合など
   }
@@ -42,6 +43,18 @@ export async function resolveWriter(env: Env, key: string | null): Promise<Write
 function requireWriter(writer: Writer | null): Writer {
   if (!writer) throw new ToolError("この操作には書き込み用の鍵が必要です。招待コードがあれば redeem_invite で鍵を受け取れます");
   return writer;
+}
+
+function requireAdmin(writer: Writer | null): Writer {
+  if (!writer?.admin) throw new ToolError("この操作は管理者の鍵でのみ使えます");
+  return writer;
+}
+
+// レシピの登録・改訂・フォークが成功したときに呼ぶ。この鍵での最初の1回だけ記録する
+export async function markOnboarded(env: Env, writer: Writer | null) {
+  if (!writer?.keyHash) return;
+  await env.DB.prepare("UPDATE write_keys SET onboarded = ? WHERE key_hash = ? AND onboarded IS NULL")
+    .bind(new Date().toISOString(), writer.keyHash).run();
 }
 
 async function nameInUse(env: Env, author: string, now: string): Promise<string | null> {
@@ -64,6 +77,12 @@ export async function createInvite(env: Env, a: any, writer: Writer | null, orig
   const days = a.days ?? DEFAULT_DAYS;
   if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) throw new ToolError(`days は 1〜${MAX_DAYS} の整数`);
   const now = new Date();
+  if (!me.admin) {
+    const row = await env.DB.prepare("SELECT onboarded FROM write_keys WHERE key_hash = ?").bind(me.keyHash).first<{ onboarded: string | null }>();
+    if (!row?.onboarded) {
+      throw new ToolError("他の人を招待できるのは、この鍵でレシピを1件以上登録（add_recipe / fork_recipe）または改訂（update_recipe）してからです");
+    }
+  }
   if (a.allow_existing) {
     // 他人の作者名の鍵を作れると、その人のレシピを書き換えられてしまう
     if (!me.admin && author !== me.author) throw new ToolError("allow_existing で招待できるのは自分の作者名だけです（自分の別のエージェント用）");
@@ -76,7 +95,7 @@ export async function createInvite(env: Env, a: any, writer: Writer | null, orig
   if (!me.admin) {
     const pending = await env.DB.prepare("SELECT COUNT(*) AS n FROM invites WHERE created_by = ? AND used IS NULL AND expires > ?")
       .bind(me.author, now.toISOString()).first<{ n: number }>();
-    if ((pending?.n ?? 0) >= MAX_PENDING) throw new ToolError(`未使用の招待は同時に${MAX_PENDING}件までです。使われるか期限が切れるのを待つか、revoke_writer で取り消してください`);
+    if ((pending?.n ?? 0) >= MAX_PENDING) throw new ToolError(`未使用の招待は同時に${MAX_PENDING}件までです。使われるか、期限が切れるまでお待ちください`);
   }
   const code = randomToken("inv_", 16);
   const expires = new Date(now.getTime() + days * 86400_000).toISOString();
@@ -120,52 +139,42 @@ export async function redeemInvite(env: Env, a: any, origin: string) {
   if (!ins.meta.changes) throw new ToolError("この招待コードはすでに使われています");
   return {
     author: inv.author, write_key: key, connect: connectHelp(origin, key),
-    next_steps: "This key is shown only once. Tell the user to reconnect this MCP server with the key (see 'connect'), then writing works. Once connected, they can also invite other people with create_invite. The key lets anyone write as this author: do not share it or store it in a public place.",
+    next_steps: "This key is shown only once. Tell the user to reconnect this MCP server with the key (see 'connect'), then writing works. After they have added or revised at least one recipe with this key, they can also invite other people with create_invite. The key lets anyone write as this author: do not share it or store it in a public place.",
   };
 }
 
-// 管理者は全員分、それ以外は自分が招待した分だけ
 export async function listWriters(env: Env, writer: Writer | null) {
-  const me = requireWriter(writer);
+  requireAdmin(writer);
   const now = new Date().toISOString();
   const keys = await env.DB.prepare(
-    `SELECT author, created, invited_by, revoked FROM write_keys ${me.admin ? "" : "WHERE invited_by = ?"} ORDER BY created`,
-  ).bind(...(me.admin ? [] : [me.author])).all<{ author: string; created: string; invited_by: string; revoked: string | null }>();
+    "SELECT author, created, invited_by, onboarded, revoked FROM write_keys ORDER BY created",
+  ).all<{ author: string; created: string; invited_by: string; onboarded: string | null; revoked: string | null }>();
   const invites = await env.DB.prepare(
-    `SELECT author, created_by, created, expires FROM invites WHERE used IS NULL AND expires > ? ${me.admin ? "" : "AND created_by = ?"} ORDER BY created`,
-  ).bind(now, ...(me.admin ? [] : [me.author])).all();
+    "SELECT author, created_by, created, expires FROM invites WHERE used IS NULL AND expires > ? ORDER BY created",
+  ).bind(now).all();
   return {
-    scope: me.admin ? "all" : "invited by you",
-    ...(me.admin ? { admins: [...new Set(Object.values(admins(env)))] } : {}),
-    writers: keys.results.map((k) => ({ ...k, active: !k.revoked })),
+    admins: [...new Set(Object.values(admins(env)))],
+    writers: keys.results.map((k) => ({ ...k, active: !k.revoked, can_invite: !k.revoked && !!k.onboarded })),
     pending_invites: invites.results,
   };
 }
 
-// 管理者は誰でも、それ以外は自分が招待した相手だけ取り消せる
 export async function revokeWriter(env: Env, a: any, writer: Writer | null) {
-  const me = requireWriter(writer);
+  requireAdmin(writer);
   const author = a.author;
   if (typeof author !== "string" || !author) throw new ToolError("author が必要です");
   const now = new Date().toISOString();
-  const mine = me.admin ? "" : " AND invited_by = ?";
-  const mineInv = me.admin ? "" : " AND created_by = ?";
-  const who = me.admin ? [] : [me.author];
   const isAdmin = Object.values(admins(env)).includes(author);
   const [keys, invites, theirs] = await env.DB.batch([
-    env.DB.prepare(`UPDATE write_keys SET revoked = ? WHERE author = ? AND revoked IS NULL${mine}`).bind(now, author, ...who),
-    env.DB.prepare(`DELETE FROM invites WHERE author = ? AND used IS NULL${mineInv}`).bind(author, ...who),
-    // 有効な鍵が1つも残らない人が出していた未使用の招待も止める
-    env.DB.prepare(
-      `DELETE FROM invites WHERE created_by = ? AND used IS NULL AND ? = 0
-       AND NOT EXISTS (SELECT 1 FROM write_keys WHERE author = ? AND revoked IS NULL)`,
-    ).bind(author, isAdmin ? 1 : 0, author),
+    env.DB.prepare("UPDATE write_keys SET revoked = ? WHERE author = ? AND revoked IS NULL").bind(now, author),
+    env.DB.prepare("DELETE FROM invites WHERE author = ? AND used IS NULL").bind(author),
+    // その人が出していた未使用の招待も止める（管理者の名前の場合は残す）
+    env.DB.prepare("DELETE FROM invites WHERE created_by = ? AND used IS NULL AND ? = 0").bind(author, isAdmin ? 1 : 0),
   ]);
   if (!keys.meta.changes && !invites.meta.changes) {
     throw new ToolError(isAdmin
       ? `"${author}" は管理者です。管理者の鍵は秘密の値 WRITE_KEYS から外して取り消します`
-      : me.admin ? `"${author}" の有効な鍵や未使用の招待はありません`
-      : `あなたが招待した相手の中に "${author}" の有効な鍵や未使用の招待はありません（取り消せるのは自分が招待した相手だけです）`);
+      : `"${author}" の有効な鍵や未使用の招待はありません`);
   }
   return {
     author, revoked_keys: keys.meta.changes, cancelled_invites: invites.meta.changes + theirs.meta.changes,

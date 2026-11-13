@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS write_keys (
   author TEXT NOT NULL,
   created TEXT NOT NULL,       -- UTC の日時（ISO 8601）
   invited_by TEXT NOT NULL,
+  onboarded TEXT,              -- この鍵で初めてレシピを登録・改訂した日時。それまでは他の人を招待できない
   revoked TEXT                 -- 取り消した日時。有効なら NULL
 );
 CREATE INDEX IF NOT EXISTS idx_write_keys_author ON write_keys (author);

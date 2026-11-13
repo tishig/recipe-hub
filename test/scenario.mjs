@@ -153,6 +153,11 @@ expect("招待コードで鍵を受け取れる（鍵なしの接続から）", 
 const J = r.data?.write_key;
 r = await tool("redeem_invite", { code });
 expect("同じ招待コードは2回使えない", !r.ok && r.text.includes("使われて"), r.text);
+r = await tool("create_invite", { author: `early-${run}` }, J);
+expect("レシピを登録・改訂する前は招待を作れない", !r.ok && r.text.includes("1件以上"), r.text);
+r = await tool("add_master_item", { kind: "ingredients", item: { id: `pre-spice-${run}`, name_ja: `登録前の香辛料${run}`, name_en: `Pre spice ${run}`, category: "spice-herb" } }, J);
+r = await tool("create_invite", { author: `early-${run}` }, J);
+expect("マスターへの追加だけでは招待を作れない", !r.ok && r.text.includes("1件以上"), r.text);
 r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（次郎版）" }) }, J);
 expect("受け取った鍵で登録できる", r.ok && r.data.id.includes(`/${A}-`), r.text);
 const jiroId = r.data?.id;
@@ -161,31 +166,22 @@ expect("受け取った鍵で自分のレシピを改訂できる", r.ok, r.text
 r = await tool("update_recipe", { id: PIE, recipe: input(), change_note: "x" }, J);
 expect("受け取った鍵でも他人のレシピは改訂できない", !r.ok, r.text);
 
-// 招待された人も、鍵を受け取って接続できたら他の人を招待できる
+// 招待された人も、レシピを1件登録・改訂したら他の人を招待できる
 const C = `shiro-${run}`, D = `goro-${run}`;
 r = await tool("create_invite", { author: C }, J);
-expect("招待された人も招待を作れる", r.ok && r.data.invite_code.startsWith("inv_"), r.text);
+expect("レシピを登録した人は招待を作れる", r.ok && r.data.invite_code.startsWith("inv_"), r.text);
 r = await tool("redeem_invite", { code: r.data?.invite_code });
 const K = r.data?.write_key;
-r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（四郎版）" }) }, K);
-expect("招待された人が招待した人も登録できる", r.ok && r.data.id.includes(`/${C}-`), r.text);
+r = await tool("fork_recipe", { source_id: PIE, recipe: input({ title: "ダッチアップルパイ（四郎版）" }), note: "試験" }, K);
+expect("招待された人が招待した人も書き込める", r.ok && r.data.id.includes(`/${C}-`), r.text);
+r = await tool("create_invite", { author: `nana-${run}` }, K);
+expect("フォークした人も招待を作れる", r.ok, r.text);
 r = await tool("create_invite", { author: "hanako", allow_existing: true }, J);
 expect("他人の作者名の鍵は作れない", !r.ok && r.text.includes("自分の作者名"), r.text);
 r = await tool("list_writers", {}, J);
-expect("招待された人の一覧には自分が招待した相手だけが出る",
-  r.ok && r.data.writers.length === 1 && r.data.writers[0].author === C && !r.data.admins, r.text);
-r = await tool("revoke_writer", { author: C }, K);
-expect("自分自身は取り消せない", !r.ok, r.text);
-r = await tool("create_invite", { author: `roku-${run}` }, T);
-const E = (await tool("redeem_invite", { code: r.data?.invite_code })).data?.write_key;
-r = await tool("revoke_writer", { author: C }, E);
-expect("招待していない相手は取り消せない", !r.ok && r.text.includes("自分が招待した"), r.text);
-r = await tool("revoke_writer", { author: C });
-expect("鍵がない人は取り消せない", !r.ok, r.text);
+expect("招待された人は鍵の一覧を見られない", !r.ok && r.text.includes("管理者"), r.text);
 r = await tool("revoke_writer", { author: C }, J);
-expect("自分が招待した相手は取り消せる", r.ok && r.data.revoked_keys === 1, r.text);
-r = await tool("add_recipe", { recipe: input({ title: "取り消し後" }) }, K);
-expect("取り消された相手は書き込めない", !r.ok && r.text.includes("鍵"), r.text);
+expect("招待された人は取り消せない", !r.ok && r.text.includes("管理者"), r.text);
 for (let i = 0; i < 5; i++) r = await tool("create_invite", { author: `${D}-${i}` }, J);
 expect("未使用の招待は5件まで作れる", r.ok, r.text);
 r = await tool("create_invite", { author: `${D}-5` }, J);
@@ -194,7 +190,8 @@ r = await tool("create_invite", { author: A, allow_existing: true, days: 1 }, T)
 expect("同じ人の2つ目の鍵は allow_existing で招待できる", r.ok, r.text);
 r = await tool("list_writers", {}, T);
 expect("管理者は鍵と招待の一覧を見られる（鍵そのものは出ない）",
-  r.ok && r.data.admins.includes("takehiro") && r.data.writers.some((w) => w.author === A && w.active)
+  r.ok && r.data.admins.includes("takehiro") && r.data.writers.some((w) => w.author === A && w.active && w.can_invite && w.invited_by === "takehiro")
+  && r.data.writers.some((w) => w.author === C && w.invited_by === A)
   && r.data.pending_invites.some((i) => i.author === A) && !r.text.includes(J) && !r.text.includes("inv_"), r.text);
 
 // Webページから受け取る

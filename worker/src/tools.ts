@@ -4,7 +4,7 @@ import {
   type Recipe, type RecipeFile, type RecipeInput,
 } from "../../shared/recipe.ts";
 import { getFile, GitHubError, putFile, type GitHubEnv } from "./github.ts";
-import { createInvite, listWriters, redeemInvite, revokeWriter, type Writer } from "./keys.ts";
+import { createInvite, listWriters, markOnboarded, redeemInvite, revokeWriter, type Writer } from "./keys.ts";
 import { masterItemSchema, recipeInputSchema, substitutionSchema } from "./schema.ts";
 import {
   MASTER_PATHS, normName, parseList, serializeList, validateMasterItem, validateSubstitution,
@@ -108,7 +108,7 @@ export const TOOL_DEFS = [
   },
   {
     name: "create_invite",
-    description: "Create a one-time invite so another person's agent can get its own write key. Requires a write key (anyone who has one can invite). Returns an invite URL and code to hand to that person.",
+    description: "Create a one-time invite so another person's agent can get its own write key. Requires a write key that has already added or revised at least one recipe (admins can always invite). Returns an invite URL and code to hand to that person.",
     inputSchema: {
       type: "object", required: ["author"],
       properties: {
@@ -120,13 +120,13 @@ export const TOOL_DEFS = [
   },
   {
     name: "list_writers",
-    description: "List the people you invited: issued write keys (author, date, active or revoked) and your unused invites. Admins see everyone. Requires a write key. Never returns keys or codes.",
+    description: "Admin only. List admins, issued write keys (author, date, who invited them, active or revoked) and unused invites. Never returns keys or codes.",
     inputSchema: { type: "object", properties: {} },
     annotations: { readOnlyHint: true },
   },
   {
     name: "revoke_writer",
-    description: "Revoke the write keys of an author you invited and cancel their unused invites. Admins can revoke anyone invited. Requires a write key. Their published recipes stay.",
+    description: "Admin only. Revoke all write keys issued by invite to an author and cancel their unused invites. Their published recipes stay.",
     inputSchema: { type: "object", required: ["author"], properties: { author: { type: "string" } } },
   },
 ] as const;
@@ -408,9 +408,15 @@ export async function callTool(env: Env, name: string, args: any, writer: Writer
     case "list_substitutions": return listSubstitutions(env, args);
     case "add_master_item": return addMasterItem(env, args, author!);
     case "add_substitution": return addSubstitution(env, args, author!);
-    case "add_recipe": return addRecipe(env, args, author!);
-    case "update_recipe": return updateRecipe(env, args, author!);
-    case "fork_recipe": return forkRecipe(env, args, author!);
+    case "add_recipe":
+    case "update_recipe":
+    case "fork_recipe": {
+      const out = name === "add_recipe" ? await addRecipe(env, args, author!)
+        : name === "update_recipe" ? await updateRecipe(env, args, author!)
+        : await forkRecipe(env, args, author!);
+      await markOnboarded(env, writer); // これ以降、この鍵で他の人を招待できる
+      return out;
+    }
     case "redeem_invite": return redeemInvite(env, args, origin);
     case "create_invite": return createInvite(env, args, writer, origin);
     case "list_writers": return listWriters(env, writer);

@@ -22,10 +22,10 @@ export const recipeInputSchema = {
     },
     sources: {
       type: "array",
-      description: "REQUIRED when any information came from an outside website or book. Empty array only if the recipe is original.",
+      description: "Every outside source this recipe draws on, each with a link. MANDATORY whenever ANY part (ingredients, amounts, method, idea) came from a website, video, book, magazine, package or another person's recipe, including recipes you or the user adapted, scaled or translated. For a book or magazine, link to its publisher or bookstore page. Use [] ONLY for a recipe the user invented themselves. Never invent a URL: if the user used a source but you do not have the link, ask the user for it before registering.",
       items: {
         type: "object", required: ["name", "url", "accessed"],
-        properties: { name: { type: "string" }, url: { type: "string" }, accessed: { type: "string", description: "YYYY-MM-DD" } },
+        properties: { name: { type: "string", description: "Site, video, book or author name" }, url: { type: "string", description: "Link to the source (http:// or https://)" }, accessed: { type: "string", description: "YYYY-MM-DD" } },
       },
     },
     tags: { type: "array", items: { type: "string" } },

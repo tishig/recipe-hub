@@ -9,7 +9,12 @@ async function rpc(method, params, key) {
   });
   return res.json();
 }
+const RECIPE_WRITES = ["add_recipe", "update_recipe", "fork_recipe"];
 async function tool(name, args, key) {
+  // 出典の申告は、試験で明示しない限り sources の中身に合わせる
+  if (RECIPE_WRITES.includes(name) && !("outside_sources" in args)) {
+    args = { ...args, outside_sources: args.recipe?.sources?.length ? "listed" : "none" };
+  }
   const r = await rpc("tools/call", { name, arguments: args }, key);
   const c = r.result;
   return { ok: !c.isError, data: c.structuredContent, text: c.content[0].text };
@@ -130,6 +135,28 @@ const kitchenBase = ["stove", "pot", "pie-dish", "baking-sheet", "knife", "peele
 expect("オーブンがない家庭では作れないと判定", found.every((x) => !canCook(x.needs, kitchenBase).ok));
 expect("オーブンレンジがあれば作れると判定", found.every((x) => canCook(x.needs, [...kitchenBase, "microwave-oven"]).ok));
 expect("オーブントースターなら互換表で作れると判定", found.every((x) => canCook(x.needs, [...kitchenBase, "toaster-oven"]).ok));
+
+// ---- 出典の念押し ----
+const SRC = [{ name: "例のサイト", url: "https://example.com/pie", accessed: "2026-11-07" }];
+r = await tool("add_recipe", { recipe: input({ title: "申告なし" }), outside_sources: undefined }, T);
+expect("出典の申告がない登録は断られる", !r.ok && r.text.includes("outside_sources") && r.text.includes("利用者に確認"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "出典が空" }), outside_sources: "listed" }, T);
+expect("出典ありと申告して sources が空だと断られる", !r.ok && r.text.includes("sources が空"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "食い違い", sources: SRC }), outside_sources: "none" }, T);
+expect("出典なしと申告して sources があると断られる", !r.ok && r.text.includes('"listed"'), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "リンクなし", sources: [{ name: "ある本", accessed: "2026-11-07" }] }), outside_sources: "listed" }, T);
+expect("リンクのない出典は断られる", !r.ok && r.text.includes("url"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（出典つき）", sources: SRC }), outside_sources: "listed" }, T);
+expect("出典つきで登録できる（念押しは付かない）", r.ok && !r.data.sources_note, r.text);
+const withSrc = r.data?.id;
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（自作）" }), outside_sources: "none" }, T);
+expect("自分で編み出したレシピは出典なしで登録でき、念押しが返る", r.ok && r.data.sources_note?.includes("update_recipe"), r.text);
+r = await tool("update_recipe", { id: withSrc, recipe: input({ title: "ダッチアップルパイ（出典つき）" }), change_note: "x", outside_sources: undefined }, T);
+expect("改訂でも出典の申告が要る", !r.ok && r.text.includes("outside_sources"), r.text);
+r = await tool("fork_recipe", { source_id: withSrc, recipe: input({ title: "出典を落としたフォーク" }), outside_sources: "none" }, H);
+expect("フォークで元の出典を落とすと断られる", !r.ok && r.text.includes("https://example.com/pie"), r.text);
+r = await tool("fork_recipe", { source_id: withSrc, recipe: input({ title: "出典を残したフォーク", sources: [...SRC, { name: "別の本", url: "https://example.com/book", accessed: "2026-11-07" }] }), outside_sources: "listed" }, H);
+expect("元の出典を残したフォークは登録できる", r.ok, r.text);
 
 // ---- 招待と鍵 ----
 // 何度実行しても通るよう、名前は実行ごとに変える

@@ -24,6 +24,11 @@ export class ToolError extends Error {}
 const idArg = { type: "string", description: "Recipe id, e.g. 'western-sweets/pie/dutch-apple-pie/takehiro-2026-11-07'" };
 const changeNote = { type: "string", description: "Why this change was made (saved in the version history)" };
 
+const outsideSources = {
+  type: "string", enum: ["listed", "none"],
+  description: "Your explicit declaration about outside sources. 'listed' = this recipe draws on outside sources and ALL of them are in recipe.sources with links. 'none' = the user invented this recipe themselves and nothing came from a website, video, book or another person's recipe. If you are not sure, ask the user before registering; do not guess 'none'.",
+};
+
 export const TOOL_DEFS = [
   {
     name: "search_recipes",
@@ -88,18 +93,18 @@ export const TOOL_DEFS = [
   },
   {
     name: "add_recipe",
-    description: "Register a NEW original recipe. Do NOT use this to copy or adapt an existing recipe in this collection — use fork_recipe instead. If any information came from an outside source, list it in sources. Requires a write key.",
-    inputSchema: { type: "object", required: ["recipe"], properties: { recipe: recipeInputSchema } },
+    description: "Register a NEW original recipe. Do NOT use this to copy or adapt an existing recipe in this collection — use fork_recipe instead. SOURCES ARE MANDATORY: if any part of the recipe came from a website, video, book or another person's recipe, every such source must be in recipe.sources with its link, and outside_sources must be 'listed'. Only a recipe the user invented themselves may use sources: [] with outside_sources 'none'. Requires a write key.",
+    inputSchema: { type: "object", required: ["recipe", "outside_sources"], properties: { recipe: recipeInputSchema, outside_sources: outsideSources } },
   },
   {
     name: "update_recipe",
-    description: "Revise one of YOUR OWN recipes. Send the complete new recipe content (not a diff). Requires a write key.",
-    inputSchema: { type: "object", required: ["id", "recipe", "change_note"], properties: { id: idArg, recipe: recipeInputSchema, change_note: changeNote } },
+    description: "Revise one of YOUR OWN recipes. Send the complete new recipe content (not a diff). Keep the existing sources, and add a source with its link for anything newly taken from a website, video, book or another person's recipe. Requires a write key.",
+    inputSchema: { type: "object", required: ["id", "recipe", "change_note", "outside_sources"], properties: { id: idArg, recipe: recipeInputSchema, change_note: changeNote, outside_sources: outsideSources } },
   },
   {
     name: "fork_recipe",
-    description: "Create your own published version based on an existing recipe (yours or someone else's). The link to the original and its author are added automatically. Send the complete content of the new version. Requires a write key.",
-    inputSchema: { type: "object", required: ["source_id", "recipe"], properties: { source_id: idArg, recipe: recipeInputSchema, note: { type: "string", description: "How it differs from the original" } } },
+    description: "Create your own published version based on an existing recipe (yours or someone else's). The link to the original and its author are added automatically. Send the complete content of the new version. Keep every source of the original recipe in recipe.sources (dropping one is rejected), and add a source with its link for anything else taken from outside. Here outside_sources 'none' means nothing came from outside this collection (the link to the original recipe is added automatically). Requires a write key.",
+    inputSchema: { type: "object", required: ["source_id", "recipe", "outside_sources"], properties: { source_id: idArg, recipe: recipeInputSchema, note: { type: "string", description: "How it differs from the original" }, outside_sources: outsideSources } },
   },
   {
     name: "redeem_invite",
@@ -190,6 +195,35 @@ async function checkCategoryNames(env: Env, r: Recipe): Promise<string[]> {
   return e;
 }
 
+// 出典の申告（outside_sources）と sources の中身が合っているか。フォークでは元のレシピの出典を引き継いでいるか
+function checkSources(a: any, r: Recipe, forkedFrom?: Recipe): string[] {
+  const e: string[] = [];
+  const list = Array.isArray(r.sources) ? r.sources : [];
+  const decl = a.outside_sources;
+  if (decl !== "listed" && decl !== "none") {
+    e.push(`outside_sources（出典の申告）が必要です。レシピのどこか一部でも（材料・分量・作り方・発想）、Webサイト・動画・本・他の人のレシピを参考にしたなら、そのすべてを sources にリンクつきで書き、outside_sources を "listed" にしてください。利用者が自分で編み出したレシピの場合だけ、sources を [] にして outside_sources を "none" にします。分からなければ、登録する前に利用者に確認してください`);
+  } else if (decl === "listed" && list.length === 0) {
+    e.push(`outside_sources が "listed" なのに sources が空です。参考にした出典を、名前（name）・リンク（url）・参照日（accessed）つきですべて書いてください。リンクが分からなければ、作らずに利用者に確認してください`);
+  } else if (decl === "none" && list.length > 0) {
+    e.push(`outside_sources が "none" なのに sources があります。外部の出典を参考にしているなら outside_sources を "listed" にしてください`);
+  }
+  if (forkedFrom) {
+    const have = new Set(list.map((s) => String(s?.url ?? "").trim()));
+    const missing = (forkedFrom.sources ?? []).filter((s) => !have.has(s.url.trim()));
+    if (missing.length) {
+      e.push(`元のレシピの出典が抜けています。フォークでは元の出典をそのまま sources に残してください: ${missing.map((s) => `${s.name} <${s.url}>`).join("、")}`);
+    }
+  }
+  return e;
+}
+
+// 出典なしで登録したときに、結果に添える念押し
+function sourcesReminder(a: any) {
+  return a.outside_sources === "none"
+    ? { sources_note: "Registered as the user's own invention with NO outside sources. If any part of it actually came from a website, video, book or another person's recipe, call update_recipe now and add every source with its link." }
+    : {};
+}
+
 function rejectIfInvalid(errors: string[]) {
   if (errors.length) {
     throw new ToolError(`様式に合わないため登録しませんでした。直して送り直してください:\n- ${errors.join("\n- ")}`);
@@ -278,8 +312,8 @@ export async function addRecipe(env: Env, a: any, author: string) {
   const recipe = { ...body, author, created: d, updated: d, status: "published", derived_from: null } as Recipe;
   const idx = await loadMasterIndex(env);
   fillNames(recipe, idx);
-  rejectIfInvalid([...validateRecipe({ ...recipe, id: `${recipeDir(recipe)}/x` }, undefined, idx), ...(await checkCategoryNames(env, recipe))]);
-  return createNew(env, recipe, notes, (r) => commitMessage("add", r), idx);
+  rejectIfInvalid([...checkSources(a, recipe), ...validateRecipe({ ...recipe, id: `${recipeDir(recipe)}/x` }, undefined, idx), ...(await checkCategoryNames(env, recipe))]);
+  return { ...(await createNew(env, recipe, notes, (r) => commitMessage("add", r), idx)), ...sourcesReminder(a) };
 }
 
 export async function updateRecipe(env: Env, a: any, author: string) {
@@ -295,12 +329,12 @@ export async function updateRecipe(env: Env, a: any, author: string) {
   } as Recipe;
   const idx = await loadMasterIndex(env);
   fillNames(recipe, idx);
-  rejectIfInvalid([...validateRecipe(recipe, old.id, idx), ...(await checkCategoryNames(env, recipe))]);
+  rejectIfInvalid([...checkSources(a, recipe), ...validateRecipe(recipe, old.id, idx), ...(await checkCategoryNames(env, recipe))]);
   const file = { recipe, notes };
   const raw = serializeRecipeFile(file);
   const { sha, commit } = await putFile(env, idToPath(old.id), raw, commitMessage("update", recipe, a.change_note), cur.sha);
   await upsertRow(env, file, raw, sha);
-  return { id: old.id, commit };
+  return { id: old.id, commit, ...sourcesReminder(a) };
 }
 
 export async function forkRecipe(env: Env, a: any, author: string) {
@@ -313,7 +347,7 @@ export async function forkRecipe(env: Env, a: any, author: string) {
   } as Recipe;
   const idx = await loadMasterIndex(env);
   fillNames(recipe, idx);
-  rejectIfInvalid([...validateRecipe({ ...recipe, id: `${recipeDir(recipe)}/x` }, undefined, idx), ...(await checkCategoryNames(env, recipe))]);
+  rejectIfInvalid([...checkSources(a, recipe, src), ...validateRecipe({ ...recipe, id: `${recipeDir(recipe)}/x` }, undefined, idx), ...(await checkCategoryNames(env, recipe))]);
   return createNew(env, recipe, notes, (r) => commitMessage("fork", r, `from ${src.id}${a.note ? `: ${a.note}` : ""}`), idx);
 }
 

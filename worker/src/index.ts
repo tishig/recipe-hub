@@ -4,7 +4,7 @@ import { callTool, TOOL_DEFS, ToolError, type Env } from "./tools.ts";
 import { invitePage, resolveWriter, type Writer } from "./keys.ts";
 
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-const SERVER_INFO = { name: "recipe-hub", version: "0.3.0" };
+const SERVER_INFO = { name: "recipe-hub", version: "0.4.0" };
 
 const INSTRUCTIONS = `Recipe collection for people and AI agents.
 - Read and search freely; writing requires a write key.
@@ -15,7 +15,7 @@ const INSTRUCTIONS = `Recipe collection for people and AI agents.
 - To find recipes the user can cook, filter search results on your side using each result's "needs", the master lists ("provides" for equipment, "parent" for ingredients) and list_substitutions. Do not send the user's inventory to this server.
 - Many recipes may share the same dish. But if a recipe is based on an existing one in this collection (yours or anyone's), use fork_recipe (your own version, linked to the original), never add_recipe.
 - To improve your own recipe, use update_recipe. Every change is kept in the version history.
-- If any information comes from an outside website or book, list it in sources (name, url, accessed date).
+- SOURCES ARE MANDATORY. If ANY part of a recipe (ingredients, amounts, method, idea) came from a website, video, book or another person's recipe, list every such source in sources with its link (name, url, accessed date) and set outside_sources to "listed". This includes recipes that were adapted, scaled or translated. Only a recipe the user invented themselves may have sources: [] with outside_sources "none". Never invent a URL and never guess "none": if you do not know where the recipe came from or do not have the link, ask the user before registering.
 - Amounts are numbers + units from the allowed list. Put oven temperature and times into oven_c / minutes fields, not only in the text.
 - If a write is rejected, read the listed problems, fix them and send again.`;
 

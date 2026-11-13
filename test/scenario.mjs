@@ -25,7 +25,7 @@ const PIE = "western-sweets/pie/dutch-apple-pie/takehiro-2026-11-07";
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
 expect("initialize", init.result?.serverInfo?.name === "recipe-hub");
 const list = await rpc("tools/list", {});
-expect("tools/list に10", list.result.tools.length === 10);
+expect("tools/list に14", list.result.tools.length === 14);
 expect("試作と取り込みの操作はない", !list.result.tools.some((t) => /branch|merge/.test(t.name)));
 
 let r = await tool("search_recipes", { query: "りんご パイ" });
@@ -130,6 +130,72 @@ const kitchenBase = ["stove", "pot", "pie-dish", "baking-sheet", "knife", "peele
 expect("オーブンがない家庭では作れないと判定", found.every((x) => !canCook(x.needs, kitchenBase).ok));
 expect("オーブンレンジがあれば作れると判定", found.every((x) => canCook(x.needs, [...kitchenBase, "microwave-oven"]).ok));
 expect("オーブントースターなら互換表で作れると判定", found.every((x) => canCook(x.needs, [...kitchenBase, "toaster-oven"]).ok));
+
+// ---- 招待と鍵 ----
+// 何度実行しても通るよう、名前は実行ごとに変える
+const run = Date.now().toString(36);
+const A = `jiro-${run}`, B = `saburo-${run}`;
+r = await tool("create_invite", { author: A });
+expect("鍵なしでは招待を作れない", !r.ok && r.text.includes("管理者"), r.text);
+r = await tool("create_invite", { author: "Jiro!" }, T);
+expect("作者名の形が違う招待は断られる", !r.ok, r.text);
+r = await tool("create_invite", { author: "hanako" }, T);
+expect("使われている名前の招待は断られる", !r.ok && r.text.includes("allow_existing"), r.text);
+r = await tool("create_invite", { author: A }, T);
+expect("管理者は招待を作れる", r.ok && r.data.invite_code.startsWith("inv_") && r.data.invite_url.endsWith(r.data.invite_code), r.text);
+const code = r.data?.invite_code;
+r = await tool("create_invite", { author: A }, T);
+expect("未使用の招待がある名前は重ねて招待できない", !r.ok, r.text);
+r = await tool("redeem_invite", { code: "inv_00000000000000000000000000000000" });
+expect("でたらめな招待コードは断られる", !r.ok, r.text);
+r = await tool("redeem_invite", { code });
+expect("招待コードで鍵を受け取れる（鍵なしの接続から）", r.ok && r.data.author === A && r.data.write_key.startsWith("rh_") && r.data.connect.url_only_clients.includes(r.data.write_key), r.text);
+const J = r.data?.write_key;
+r = await tool("redeem_invite", { code });
+expect("同じ招待コードは2回使えない", !r.ok && r.text.includes("使われて"), r.text);
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（次郎版）" }) }, J);
+expect("受け取った鍵で登録できる", r.ok && r.data.id.includes(`/${A}-`), r.text);
+const jiroId = r.data?.id;
+r = await tool("update_recipe", { id: jiroId, recipe: input({ title: "ダッチアップルパイ（次郎版・改）" }), change_note: "題名を変更" }, J);
+expect("受け取った鍵で自分のレシピを改訂できる", r.ok, r.text);
+r = await tool("update_recipe", { id: PIE, recipe: input(), change_note: "x" }, J);
+expect("受け取った鍵でも他人のレシピは改訂できない", !r.ok, r.text);
+r = await tool("create_invite", { author: B }, J);
+expect("招待された人は招待を作れない", !r.ok && r.text.includes("管理者"), r.text);
+r = await tool("list_writers", {}, J);
+expect("招待された人は鍵の一覧を見られない", !r.ok, r.text);
+r = await tool("create_invite", { author: A, allow_existing: true, days: 1 }, T);
+expect("同じ人の2つ目の鍵は allow_existing で招待できる", r.ok, r.text);
+r = await tool("list_writers", {}, T);
+expect("管理者は鍵と招待の一覧を見られる（鍵そのものは出ない）",
+  r.ok && r.data.admins.includes("takehiro") && r.data.writers.some((w) => w.author === A && w.active)
+  && r.data.pending_invites.some((i) => i.author === A) && !r.text.includes(J) && !r.text.includes("inv_"), r.text);
+
+// Webページから受け取る
+r = await tool("create_invite", { author: B }, T);
+const inviteUrl = r.data.invite_url.replace(/^https?:\/\/[^/]+/, new URL(URL_).origin);
+let res = await fetch(inviteUrl);
+expect("招待ページを開いただけでは招待は使われない", res.status === 200 && !(await res.text()).includes("rh_"));
+res = await fetch(inviteUrl, { method: "POST" });
+let html = await res.text();
+const S = html.match(/rh_[0-9a-f]{48}/)?.[0];
+expect("招待ページのボタンで鍵が出る", res.status === 200 && !!S && res.headers.get("cache-control") === "no-store", html.slice(0, 200));
+res = await fetch(inviteUrl, { method: "POST" });
+expect("招待ページでも2回目は断られる", res.status === 400);
+r = await tool("add_master_item", { kind: "ingredients", item: { id: `test-spice-${run}`, name_ja: `試験の香辛料${run}`, name_en: `Test spice ${run}`, category: "spice-herb" } }, S);
+expect("ページで受け取った鍵で書き込める", r.ok, r.text);
+
+// 取り消し
+r = await tool("revoke_writer", { author: A }, J);
+expect("招待された人は取り消せない", !r.ok, r.text);
+r = await tool("revoke_writer", { author: A }, T);
+expect("管理者は鍵を取り消せる（未使用の招待も消える）", r.ok && r.data.revoked_keys === 1 && r.data.cancelled_invites === 1, r.text);
+r = await tool("add_recipe", { recipe: input({ title: "取り消し後" }) }, J);
+expect("取り消された鍵では書き込めない", !r.ok && r.text.includes("鍵"), r.text);
+r = await tool("get_recipe", { id: jiroId });
+expect("取り消しても登録済みのレシピは残る", r.ok, r.text);
+r = await tool("revoke_writer", { author: "takehiro" }, T);
+expect("管理者はこの操作では取り消せない", !r.ok && r.text.includes("WRITE_KEYS"), r.text);
 
 const md = await fetch(URL_.replace("/mcp", `/recipes/${PIE}.md`)).then((x) => x.text());
 expect("Markdownを直接取得できる", md.startsWith("---\nid: " + PIE));

@@ -28,6 +28,10 @@ AI ──MCP──▶ Cloudflare Workers（レシピ専用MCPサーバー）
 | add_recipe | 新しいオリジナルのレシピを登録 | 必要 |
 | update_recipe | 自分のレシピを改訂（変更理由が必須） | 必要 |
 | fork_recipe | 自分や他人のレシピを元に、自分の版を公開 | 必要 |
+| redeem_invite | 招待コードを書き込み用の鍵に引き換える | 不要（招待コード） |
+| create_invite | 他の人のエージェント用に、1回限りの招待を作る | 管理者 |
+| list_writers | 管理者、配った鍵、未使用の招待の一覧（鍵そのものは出ない） | 管理者 |
+| revoke_writer | 招待で配った鍵を取り消す（登録済みのレシピは残る） | 管理者 |
 
 検索結果には、各レシピに必要な道具と材料の id が付きます。持っている道具や調味料による絞り込みは、サーバーではなく利用者のエージェント側で行います（手順は様式の説明を参照）。
 
@@ -80,7 +84,23 @@ Cloudflareの My Profile → API Tokens で鍵を作り（権限：**Workers Scr
 - **claude.ai のカスタムコネクタなど、URLしか入れられないもの**：`https://recipe-hub.<名前>.workers.dev/mcp?key=<書き込み用の鍵>`
   - URLに鍵が入るので、このURLは人に渡さないこと。
 - **他の人に読むだけで使ってもらう場合**：鍵なしの `https://recipe-hub.<名前>.workers.dev/mcp` を渡す。
-- **他の人にも書いてもらう場合**：その人用の鍵を作り、`WRITE_KEYS` に `"<鍵>":"その人の名前"` を足して `wrangler secret put WRITE_KEYS` し直す。
+- **他の人にも書いてもらう場合**：下の「招待」を使う。
+
+## 招待（他の人のエージェントに書いてもらう）
+
+`WRITE_KEYS` に登録した鍵は **管理者の鍵** です。管理者は自分のエージェントから招待を作れます。
+
+1. 自分のエージェントに「hanako さん用の招待を作って」と頼む（`create_invite`）。作者名は英小文字・数字・ハイフンで、招待のときに決まる。
+2. 返ってきた招待のURL（`https://recipe-hub.<名前>.workers.dev/invite/inv_…`）を、その人だけに渡す。期限は7日（`days` で1〜30日に変更可）、使えるのは1回。
+3. 相手はURLを開いて「鍵を受け取る」を押す。鍵と、エージェントへの設定方法が **1回だけ** 表示される。
+   - エージェントが招待コードを `redeem_invite` に渡して受け取ることもできる。
+4. 相手が鍵を設定すれば、登録（`add_recipe`）、自分のレシピの改訂（`update_recipe`）、フォーク（`fork_recipe`）、マスターへの追加ができる。
+
+- 招待で配った鍵では、招待の作成・一覧・取り消しはできない。
+- 鍵と招待コードはハッシュ値だけを D1 に保存する。あとから鍵を見直すことはできないので、なくしたら招待し直す。
+- やめてもらうときは「hanako の鍵を取り消して」と頼む（`revoke_writer`）。
+- 同じ作者名に2つ目の鍵を出すときだけ `allow_existing: true` を付ける。同じ作者名の鍵は、その作者のレシピを改訂できる。
+- 管理者を増やす・外すときは、従来どおり `wrangler secret put WRITE_KEYS` をやり直す。
 
 ## 手元での試験
 
@@ -91,13 +111,13 @@ cp .dev.vars.example .dev.vars                  # 試験用の設定
 npm run db:init:local && npm run db:load:local
 node test/mock-github.mjs &                     # GitHubのかわり（ファイルは test/out-* に出る）
 npx wrangler dev &                              # http://localhost:8787
-node test/scenario.mjs                          # 登録・改訂・フォーク・マスター・絞り込みの例など35項目
+node test/scenario.mjs                          # 登録・改訂・フォーク・マスター・絞り込み・招待と鍵など59項目
 ```
 
 ## 第1版でできないこと
 
 - レシピの削除（意図的に用意していません。GitHubで直接消せば、次の写しで反映されます）
 - 人間向けの見やすいWebページ（Markdownは `/recipes/<id>.md` で読めます）
-- 鍵の発行は手作業（`WRITE_KEYS` に追記）
+- 誰でも申し込める自由登録（鍵は管理者の招待でのみ配る）
 
 GitHub上でレシピのファイルを直接書き換えてもかまいません。様式の確認を通れば、D1にも写されます。

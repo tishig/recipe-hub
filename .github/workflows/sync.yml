@@ -1,0 +1,39 @@
+# レシピが更新されたら: 様式を確認 → D1（Cloudflareのデータベース）に写す
+name: check-and-sync
+on:
+  push:
+    branches: [main]
+    paths: ["recipes/**", "masters/**", "shared/**", "tools/**", "worker/migrations/**"]
+  pull_request:
+    paths: ["recipes/**", "masters/**"]
+  workflow_dispatch: {}
+
+concurrency: sync   # 写す作業が重ならないよう1つずつ
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run check
+
+  sync:
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: |
+            d1 migrations apply recipes --remote
+            d1 execute recipes --remote --file=build/recipes.sql --yes

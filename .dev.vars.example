@@ -1,0 +1,3 @@
+GITHUB_TOKEN=dummy
+GITHUB_API=http://127.0.0.1:8788
+WRITE_KEYS={"testkey-takehiro":"takehiro","testkey-hanako":"hanako"}

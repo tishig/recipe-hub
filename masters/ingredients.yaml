@@ -1,0 +1,332 @@
+# 材料のマスターリスト。parent: より広い分類の材料（無塩バター → バター）
+- id: onion
+  name_ja: 玉ねぎ
+  name_en: onion
+  category: vegetable
+  added_by: seed
+- id: garlic
+  name_ja: にんにく
+  name_en: garlic
+  category: vegetable
+  added_by: seed
+- id: ginger
+  name_ja: しょうが
+  name_en: ginger
+  category: vegetable
+  added_by: seed
+- id: carrot
+  name_ja: にんじん
+  name_en: carrot
+  category: vegetable
+  added_by: seed
+- id: potato
+  name_ja: じゃがいも
+  name_en: potato
+  category: vegetable
+  added_by: seed
+- id: cabbage
+  name_ja: キャベツ
+  name_en: cabbage
+  category: vegetable
+  added_by: seed
+- id: green-onion
+  name_ja: ねぎ
+  name_en: green onion
+  category: vegetable
+  added_by: seed
+- id: tomato
+  name_ja: トマト
+  name_en: tomato
+  category: vegetable
+  added_by: seed
+- id: apple
+  name_ja: りんご
+  name_en: apple
+  category: fruit
+  added_by: seed
+- id: lemon
+  name_ja: レモン
+  name_en: lemon
+  category: fruit
+  added_by: seed
+- id: lemon-juice
+  name_ja: レモン汁
+  name_en: lemon juice
+  category: fruit
+  parent: lemon
+  added_by: seed
+- id: lemon-zest
+  name_ja: レモンの皮
+  name_en: lemon zest
+  category: fruit
+  parent: lemon
+  added_by: seed
+- id: lime
+  name_ja: ライム
+  name_en: lime
+  category: fruit
+  added_by: seed
+- id: lime-juice
+  name_ja: ライム汁
+  name_en: lime juice
+  category: fruit
+  parent: lime
+  added_by: seed
+- id: chicken-thigh
+  name_ja: 鶏もも肉
+  name_en: chicken thigh
+  category: meat
+  added_by: seed
+- id: chicken-breast
+  name_ja: 鶏むね肉
+  name_en: chicken breast
+  category: meat
+  added_by: seed
+- id: pork-belly
+  name_ja: 豚バラ肉
+  name_en: pork belly
+  category: meat
+  added_by: seed
+- id: ground-pork
+  name_ja: 豚ひき肉
+  name_en: ground pork
+  category: meat
+  added_by: seed
+- id: beef
+  name_ja: 牛肉
+  name_en: beef
+  category: meat
+  added_by: seed
+- id: salmon
+  name_ja: 鮭
+  name_en: salmon
+  category: seafood
+  added_by: seed
+- id: egg
+  name_ja: 卵
+  name_en: egg
+  category: dairy-egg
+  added_by: seed
+- id: milk
+  name_ja: 牛乳
+  name_en: milk
+  category: dairy-egg
+  added_by: seed
+- id: butter
+  name_ja: バター
+  name_en: butter
+  category: dairy-egg
+  added_by: seed
+- id: unsalted-butter
+  name_ja: 無塩バター
+  name_en: unsalted butter
+  category: dairy-egg
+  parent: butter
+  added_by: seed
+- id: salted-butter
+  name_ja: 有塩バター
+  name_en: salted butter
+  category: dairy-egg
+  parent: butter
+  added_by: seed
+- id: heavy-cream
+  name_ja: 生クリーム
+  name_en: heavy cream
+  category: dairy-egg
+  added_by: seed
+- id: buttermilk
+  name_ja: バターミルク
+  name_en: buttermilk
+  category: dairy-egg
+  added_by: seed
+- id: plain-yogurt
+  name_ja: プレーンヨーグルト
+  name_en: plain yogurt
+  category: dairy-egg
+  added_by: seed
+- id: flour
+  name_ja: 小麦粉
+  name_en: wheat flour
+  category: grain-flour
+  added_by: seed
+- id: cake-flour
+  name_ja: 薄力粉
+  name_en: cake flour
+  category: grain-flour
+  parent: flour
+  added_by: seed
+- id: all-purpose-flour
+  name_ja: 中力粉
+  name_en: all-purpose flour
+  category: grain-flour
+  parent: flour
+  added_by: seed
+- id: bread-flour
+  name_ja: 強力粉
+  name_en: bread flour
+  category: grain-flour
+  parent: flour
+  added_by: seed
+- id: cornstarch
+  name_ja: コーンスターチ
+  name_en: cornstarch
+  category: grain-flour
+  added_by: seed
+- id: potato-starch
+  name_ja: 片栗粉
+  name_en: potato starch
+  category: grain-flour
+  added_by: seed
+- id: rice
+  name_ja: 米
+  name_en: rice
+  category: grain-flour
+  added_by: seed
+- id: panko
+  name_ja: パン粉
+  name_en: panko breadcrumbs
+  category: grain-flour
+  added_by: seed
+- id: sugar
+  name_ja: 砂糖
+  name_en: sugar
+  category: sugar-sweetener
+  added_by: seed
+- id: granulated-sugar
+  name_ja: グラニュー糖
+  name_en: granulated sugar
+  category: sugar-sweetener
+  parent: sugar
+  added_by: seed
+- id: japanese-white-sugar
+  name_ja: 上白糖
+  name_en: Japanese white sugar (johakuto)
+  category: sugar-sweetener
+  parent: sugar
+  added_by: seed
+- id: brown-sugar
+  name_ja: ブラウンシュガー
+  name_en: brown sugar
+  category: sugar-sweetener
+  parent: sugar
+  added_by: seed
+- id: honey
+  name_ja: はちみつ
+  name_en: honey
+  category: sugar-sweetener
+  added_by: seed
+- id: maple-syrup
+  name_ja: メープルシロップ
+  name_en: maple syrup
+  category: sugar-sweetener
+  added_by: seed
+- id: molasses
+  name_ja: モラセス
+  name_en: molasses
+  category: sugar-sweetener
+  added_by: seed
+- id: salt
+  name_ja: 塩
+  name_en: salt
+  category: seasoning
+  added_by: seed
+- id: black-pepper
+  name_ja: 黒こしょう
+  name_en: black pepper
+  category: seasoning
+  added_by: seed
+- id: soy-sauce
+  name_ja: しょうゆ
+  name_en: soy sauce
+  category: seasoning
+  added_by: seed
+- id: miso
+  name_ja: 味噌
+  name_en: miso
+  category: seasoning
+  added_by: seed
+- id: mirin
+  name_ja: みりん
+  name_en: mirin
+  category: seasoning
+  added_by: seed
+- id: sake
+  name_ja: 酒
+  name_en: cooking sake
+  category: seasoning
+  added_by: seed
+- id: rice-vinegar
+  name_ja: 米酢
+  name_en: rice vinegar
+  category: seasoning
+  added_by: seed
+- id: dashi
+  name_ja: だし
+  name_en: dashi stock
+  category: seasoning
+  added_by: seed
+- id: mayonnaise
+  name_ja: マヨネーズ
+  name_en: mayonnaise
+  category: seasoning
+  added_by: seed
+- id: ketchup
+  name_ja: ケチャップ
+  name_en: ketchup
+  category: seasoning
+  added_by: seed
+- id: cinnamon
+  name_ja: シナモン
+  name_en: ground cinnamon
+  category: spice-herb
+  added_by: seed
+- id: nutmeg
+  name_ja: ナツメグ
+  name_en: ground nutmeg
+  category: spice-herb
+  added_by: seed
+- id: cardamom
+  name_ja: カルダモン
+  name_en: ground cardamom
+  category: spice-herb
+  added_by: seed
+- id: vanilla-extract
+  name_ja: バニラエクストラクト
+  name_en: vanilla extract
+  category: spice-herb
+  added_by: seed
+- id: vegetable-oil
+  name_ja: サラダ油
+  name_en: vegetable oil
+  category: oil-fat
+  added_by: seed
+- id: olive-oil
+  name_ja: オリーブオイル
+  name_en: olive oil
+  category: oil-fat
+  added_by: seed
+- id: sesame-oil
+  name_ja: ごま油
+  name_en: sesame oil
+  category: oil-fat
+  added_by: seed
+- id: water
+  name_ja: 水
+  name_en: water
+  category: other
+  added_by: seed
+- id: pie-dough
+  name_ja: パイ生地
+  name_en: pie dough
+  category: other
+  added_by: seed
+- id: baking-powder
+  name_ja: ベーキングパウダー
+  name_en: baking powder
+  category: other
+  added_by: seed
+- id: baking-soda
+  name_ja: 重曹
+  name_en: baking soda
+  category: other
+  added_by: seed

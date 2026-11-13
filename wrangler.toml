@@ -1,0 +1,18 @@
+name = "recipe-hub"
+main = "worker/src/index.ts"
+compatibility_date = "2026-10-01"
+
+[vars]
+GITHUB_REPO = "tishig/recipe-hub"
+GITHUB_BRANCH = "main"
+TIMEZONE = "America/Los_Angeles"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "recipes"
+database_id = "33bc5b20-1651-4517-81bd-c793741b1088"
+migrations_dir = "worker/migrations"
+
+# 秘密の値は wrangler secret put で登録する（このファイルには書かない）
+#   GITHUB_TOKEN : このリポジトリの Contents 読み書きだけを許可したGitHubの鍵
+#   WRITE_KEYS   : {"<長いランダムな文字列>": "takehiro"} の形のJSON

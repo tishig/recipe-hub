@@ -1,0 +1,229 @@
+# 道具のマスターリスト。provides: この道具が兼ねる道具
+- id: stove
+  name_ja: コンロ
+  name_en: stovetop
+  category: heat-source
+  added_by: seed
+- id: gas-stove
+  name_ja: ガスコンロ
+  name_en: gas stove
+  category: heat-source
+  provides:
+    - stove
+  added_by: seed
+- id: induction-cooktop
+  name_ja: IHコンロ
+  name_en: induction cooktop
+  category: heat-source
+  provides:
+    - stove
+  added_by: seed
+- id: oven
+  name_ja: オーブン
+  name_en: oven
+  category: heat-source
+  added_by: seed
+- id: convection-oven
+  name_ja: コンベクションオーブン
+  name_en: convection oven
+  category: heat-source
+  provides:
+    - oven
+  added_by: seed
+- id: microwave-oven
+  name_ja: オーブンレンジ
+  name_en: microwave oven combo
+  category: heat-source
+  provides:
+    - oven
+    - microwave
+  added_by: seed
+- id: microwave
+  name_ja: 電子レンジ
+  name_en: microwave
+  category: heat-source
+  added_by: seed
+- id: toaster-oven
+  name_ja: オーブントースター
+  name_en: toaster oven
+  category: heat-source
+  added_by: seed
+- id: fish-grill
+  name_ja: 魚焼きグリル
+  name_en: fish grill
+  category: heat-source
+  added_by: seed
+- id: rice-cooker
+  name_ja: 炊飯器
+  name_en: rice cooker
+  category: heat-source
+  added_by: seed
+- id: electric-pressure-cooker
+  name_ja: 電気圧力鍋
+  name_en: electric pressure cooker
+  category: heat-source
+  added_by: seed
+- id: air-fryer
+  name_ja: ノンフライヤー
+  name_en: air fryer
+  category: heat-source
+  added_by: seed
+- id: pot
+  name_ja: 鍋
+  name_en: pot
+  category: cookware
+  added_by: seed
+- id: saucepan
+  name_ja: 片手鍋
+  name_en: saucepan
+  category: cookware
+  provides:
+    - pot
+  added_by: seed
+- id: frying-pan
+  name_ja: フライパン
+  name_en: frying pan
+  category: cookware
+  added_by: seed
+- id: wok
+  name_ja: 中華鍋
+  name_en: wok
+  category: cookware
+  provides:
+    - frying-pan
+  added_by: seed
+- id: steamer
+  name_ja: 蒸し器
+  name_en: steamer
+  category: cookware
+  added_by: seed
+- id: pie-dish
+  name_ja: パイ皿
+  name_en: pie dish
+  category: bakeware
+  added_by: seed
+- id: baking-sheet
+  name_ja: 天板
+  name_en: baking sheet
+  category: bakeware
+  added_by: seed
+- id: pizza-stone
+  name_ja: ピザストーン
+  name_en: pizza stone
+  category: bakeware
+  added_by: seed
+- id: cake-pan
+  name_ja: ケーキ型
+  name_en: cake pan
+  category: bakeware
+  added_by: seed
+- id: loaf-pan
+  name_ja: パウンド型
+  name_en: loaf pan
+  category: bakeware
+  added_by: seed
+- id: knife
+  name_ja: 包丁
+  name_en: knife
+  category: tool
+  added_by: seed
+- id: cutting-board
+  name_ja: まな板
+  name_en: cutting board
+  category: tool
+  added_by: seed
+- id: peeler
+  name_ja: ピーラー
+  name_en: peeler
+  category: tool
+  added_by: seed
+- id: mixing-bowl
+  name_ja: ボウル
+  name_en: mixing bowl
+  category: tool
+  added_by: seed
+- id: whisk
+  name_ja: 泡立て器
+  name_en: whisk
+  category: tool
+  added_by: seed
+- id: rubber-spatula
+  name_ja: ゴムベラ
+  name_en: rubber spatula
+  category: tool
+  added_by: seed
+- id: measuring-spoons
+  name_ja: 計量スプーン
+  name_en: measuring spoons
+  category: tool
+  added_by: seed
+- id: measuring-cup
+  name_ja: 計量カップ
+  name_en: measuring cup
+  category: tool
+  added_by: seed
+- id: kitchen-scale
+  name_ja: キッチンスケール
+  name_en: kitchen scale
+  category: tool
+  added_by: seed
+- id: tray
+  name_ja: バット
+  name_en: tray
+  category: tool
+  added_by: seed
+- id: cooling-rack
+  name_ja: ケーキクーラー
+  name_en: cooling rack
+  category: tool
+  added_by: seed
+- id: rolling-pin
+  name_ja: めん棒
+  name_en: rolling pin
+  category: tool
+  added_by: seed
+- id: thermometer
+  name_ja: 温度計
+  name_en: thermometer
+  category: tool
+  added_by: seed
+- id: hand-mixer
+  name_ja: ハンドミキサー
+  name_en: hand mixer
+  category: appliance
+  added_by: seed
+- id: food-processor
+  name_ja: フードプロセッサー
+  name_en: food processor
+  category: appliance
+  added_by: seed
+- id: blender
+  name_ja: ミキサー
+  name_en: blender
+  category: appliance
+  added_by: seed
+- id: refrigerator
+  name_ja: 冷蔵庫
+  name_en: refrigerator
+  category: storage
+  added_by: seed
+- id: freezer
+  name_ja: 冷凍庫
+  name_en: freezer
+  category: storage
+  added_by: seed
+- id: aluminum-foil
+  name_ja: アルミホイル
+  name_en: aluminum foil
+  category: consumable
+  added_by: seed
+- id: parchment-paper
+  name_ja: クッキングシート
+  name_en: parchment paper
+  category: consumable
+  added_by: seed
+- id: plastic-wrap
+  name_ja: ラップ
+  name_en: plastic wrap
+  category: consumable
+  added_by: seed

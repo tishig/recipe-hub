@@ -4,6 +4,7 @@ import {
   type Recipe, type RecipeFile, type RecipeInput,
 } from "../../shared/recipe.ts";
 import { getFile, GitHubError, putFile, type GitHubEnv } from "./github.ts";
+import { createInvite, listWriters, markOnboarded, redeemInvite, revokeWriter, type Writer } from "./keys.ts";
 import { masterItemSchema, recipeInputSchema, substitutionSchema } from "./schema.ts";
 import {
   MASTER_PATHS, normName, parseList, serializeList, validateMasterItem, validateSubstitution,
@@ -12,7 +13,7 @@ import {
 
 export interface Env extends GitHubEnv {
   DB: D1Database;
-  WRITE_KEYS: string; // JSON: {"<鍵>": "<作者名>"}
+  WRITE_KEYS: string; // 管理者の鍵。JSON: {"<鍵>": "<作者名>"}（招待で配る鍵は D1 の write_keys）
   TIMEZONE?: string;
 }
 
@@ -99,6 +100,34 @@ export const TOOL_DEFS = [
     name: "fork_recipe",
     description: "Create your own published version based on an existing recipe (yours or someone else's). The link to the original and its author are added automatically. Send the complete content of the new version. Requires a write key.",
     inputSchema: { type: "object", required: ["source_id", "recipe"], properties: { source_id: idArg, recipe: recipeInputSchema, note: { type: "string", description: "How it differs from the original" } } },
+  },
+  {
+    name: "redeem_invite",
+    description: "Exchange a one-time invite code for a write key. No key needed. Use this when the user has an invite code (inv_...) and this connection cannot write yet. The key is returned only once: tell the user how to reconnect with it (see 'connect' in the result).",
+    inputSchema: { type: "object", required: ["code"], properties: { code: { type: "string", description: "Invite code, e.g. 'inv_...'" } } },
+  },
+  {
+    name: "create_invite",
+    description: "Create a one-time invite so another person's agent can get its own write key. Requires a write key that has already added or revised at least one recipe (admins can always invite). Returns an invite URL and code to hand to that person.",
+    inputSchema: {
+      type: "object", required: ["author"],
+      properties: {
+        author: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 30, description: "Author name the invited person will write as (lowercase letters, digits, hyphens), e.g. 'hanako'" },
+        days: { type: "integer", minimum: 1, maximum: 30, description: "Days until the invite expires (default 7)" },
+        allow_existing: { type: "boolean", description: "Set true only to give an additional key to an author name that is already in use (same person, another agent). Non-admins may do this only for their own author name." },
+      },
+    },
+  },
+  {
+    name: "list_writers",
+    description: "Admin only. List admins, issued write keys (author, date, who invited them, active or revoked) and unused invites. Never returns keys or codes.",
+    inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "revoke_writer",
+    description: "Admin only. Revoke all write keys issued by invite to an author and cancel their unused invites. Their published recipes stay.",
+    inputSchema: { type: "object", required: ["author"], properties: { author: { type: "string" } } },
   },
 ] as const;
 
@@ -366,9 +395,10 @@ export async function addSubstitution(env: Env, a: any, author: string) {
 
 export const WRITE_TOOLS = new Set(["add_recipe", "update_recipe", "fork_recipe", "add_master_item", "add_substitution"]);
 
-export async function callTool(env: Env, name: string, args: any, author: string | null) {
+export async function callTool(env: Env, name: string, args: any, writer: Writer | null, origin: string) {
+  const author = writer?.author ?? null;
   if (WRITE_TOOLS.has(name) && !author) {
-    throw new ToolError("この操作には書き込み用の鍵が必要です（読み込みと検索は鍵なしで使えます）");
+    throw new ToolError("この操作には書き込み用の鍵が必要です（読み込みと検索は鍵なしで使えます）。招待コードがあれば redeem_invite で鍵を受け取れます");
   }
   switch (name) {
     case "search_recipes": return searchRecipes(env, args);
@@ -378,9 +408,19 @@ export async function callTool(env: Env, name: string, args: any, author: string
     case "list_substitutions": return listSubstitutions(env, args);
     case "add_master_item": return addMasterItem(env, args, author!);
     case "add_substitution": return addSubstitution(env, args, author!);
-    case "add_recipe": return addRecipe(env, args, author!);
-    case "update_recipe": return updateRecipe(env, args, author!);
-    case "fork_recipe": return forkRecipe(env, args, author!);
+    case "add_recipe":
+    case "update_recipe":
+    case "fork_recipe": {
+      const out = name === "add_recipe" ? await addRecipe(env, args, author!)
+        : name === "update_recipe" ? await updateRecipe(env, args, author!)
+        : await forkRecipe(env, args, author!);
+      await markOnboarded(env, writer); // これ以降、この鍵で他の人を招待できる
+      return out;
+    }
+    case "redeem_invite": return redeemInvite(env, args, origin);
+    case "create_invite": return createInvite(env, args, writer, origin);
+    case "list_writers": return listWriters(env, writer);
+    case "revoke_writer": return revokeWriter(env, args, writer);
     default: throw new ToolError(`未知の操作: ${name}`);
   }
 }

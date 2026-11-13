@@ -9,6 +9,7 @@ const SERVER_INFO = { name: "recipe-hub", version: "0.3.0" };
 const INSTRUCTIONS = `Recipe collection for people and AI agents.
 - Read and search freely; writing requires a write key.
 - No write key but the user has an invite code (inv_...)? Call redeem_invite, then tell the user how to reconnect with the key it returns.
+- Anyone with a write key can invite another person with create_invite, and can list or revoke the people they invited.
 - Before adding, call list_categories and reuse existing genre/group/dish slugs.
 - Equipment and ingredients are chosen from master lists (list_master). If something is missing, add it with add_master_item, then use its id.
 - To find recipes the user can cook, filter search results on your side using each result's "needs", the master lists ("provides" for equipment, "parent" for ingredients) and list_substitutions. Do not send the user's inventory to this server.

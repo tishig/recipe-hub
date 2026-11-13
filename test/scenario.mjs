@@ -136,7 +136,7 @@ expect("オーブントースターなら互換表で作れると判定", found.
 const run = Date.now().toString(36);
 const A = `jiro-${run}`, B = `saburo-${run}`;
 r = await tool("create_invite", { author: A });
-expect("鍵なしでは招待を作れない", !r.ok && r.text.includes("管理者"), r.text);
+expect("鍵なしでは招待を作れない", !r.ok && r.text.includes("鍵"), r.text);
 r = await tool("create_invite", { author: "Jiro!" }, T);
 expect("作者名の形が違う招待は断られる", !r.ok, r.text);
 r = await tool("create_invite", { author: "hanako" }, T);
@@ -160,10 +160,36 @@ r = await tool("update_recipe", { id: jiroId, recipe: input({ title: "ダッチ�
 expect("受け取った鍵で自分のレシピを改訂できる", r.ok, r.text);
 r = await tool("update_recipe", { id: PIE, recipe: input(), change_note: "x" }, J);
 expect("受け取った鍵でも他人のレシピは改訂できない", !r.ok, r.text);
-r = await tool("create_invite", { author: B }, J);
-expect("招待された人は招待を作れない", !r.ok && r.text.includes("管理者"), r.text);
+
+// 招待された人も、鍵を受け取って接続できたら他の人を招待できる
+const C = `shiro-${run}`, D = `goro-${run}`;
+r = await tool("create_invite", { author: C }, J);
+expect("招待された人も招待を作れる", r.ok && r.data.invite_code.startsWith("inv_"), r.text);
+r = await tool("redeem_invite", { code: r.data?.invite_code });
+const K = r.data?.write_key;
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（四郎版）" }) }, K);
+expect("招待された人が招待した人も登録できる", r.ok && r.data.id.includes(`/${C}-`), r.text);
+r = await tool("create_invite", { author: "hanako", allow_existing: true }, J);
+expect("他人の作者名の鍵は作れない", !r.ok && r.text.includes("自分の作者名"), r.text);
 r = await tool("list_writers", {}, J);
-expect("招待された人は鍵の一覧を見られない", !r.ok, r.text);
+expect("招待された人の一覧には自分が招待した相手だけが出る",
+  r.ok && r.data.writers.length === 1 && r.data.writers[0].author === C && !r.data.admins, r.text);
+r = await tool("revoke_writer", { author: C }, K);
+expect("自分自身は取り消せない", !r.ok, r.text);
+r = await tool("create_invite", { author: `roku-${run}` }, T);
+const E = (await tool("redeem_invite", { code: r.data?.invite_code })).data?.write_key;
+r = await tool("revoke_writer", { author: C }, E);
+expect("招待していない相手は取り消せない", !r.ok && r.text.includes("自分が招待した"), r.text);
+r = await tool("revoke_writer", { author: C });
+expect("鍵がない人は取り消せない", !r.ok, r.text);
+r = await tool("revoke_writer", { author: C }, J);
+expect("自分が招待した相手は取り消せる", r.ok && r.data.revoked_keys === 1, r.text);
+r = await tool("add_recipe", { recipe: input({ title: "取り消し後" }) }, K);
+expect("取り消された相手は書き込めない", !r.ok && r.text.includes("鍵"), r.text);
+for (let i = 0; i < 5; i++) r = await tool("create_invite", { author: `${D}-${i}` }, J);
+expect("未使用の招待は5件まで作れる", r.ok, r.text);
+r = await tool("create_invite", { author: `${D}-5` }, J);
+expect("6件目の未使用の招待は断られる", !r.ok && r.text.includes("5件"), r.text);
 r = await tool("create_invite", { author: A, allow_existing: true, days: 1 }, T);
 expect("同じ人の2つ目の鍵は allow_existing で招待できる", r.ok, r.text);
 r = await tool("list_writers", {}, T);
@@ -186,10 +212,10 @@ r = await tool("add_master_item", { kind: "ingredients", item: { id: `test-spice
 expect("ページで受け取った鍵で書き込める", r.ok, r.text);
 
 // 取り消し
-r = await tool("revoke_writer", { author: A }, J);
-expect("招待された人は取り消せない", !r.ok, r.text);
 r = await tool("revoke_writer", { author: A }, T);
-expect("管理者は鍵を取り消せる（未使用の招待も消える）", r.ok && r.data.revoked_keys === 1 && r.data.cancelled_invites === 1, r.text);
+expect("管理者は鍵を取り消せる（本人あての招待と、本人が出した未使用の招待も消える）", r.ok && r.data.revoked_keys === 1 && r.data.cancelled_invites === 6, r.text);
+r = await tool("list_writers", {}, T);
+expect("取り消された人が出した招待は残らない", r.ok && !r.data.pending_invites.some((i) => i.created_by === A), r.text);
 r = await tool("add_recipe", { recipe: input({ title: "取り消し後" }) }, J);
 expect("取り消された鍵では書き込めない", !r.ok && r.text.includes("鍵"), r.text);
 r = await tool("get_recipe", { id: jiroId });

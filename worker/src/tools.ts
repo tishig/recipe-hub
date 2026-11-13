@@ -108,25 +108,25 @@ export const TOOL_DEFS = [
   },
   {
     name: "create_invite",
-    description: "Admin only. Create a one-time invite so another person's agent can get its own write key. Returns an invite URL and code to hand to that person.",
+    description: "Create a one-time invite so another person's agent can get its own write key. Requires a write key (anyone who has one can invite). Returns an invite URL and code to hand to that person.",
     inputSchema: {
       type: "object", required: ["author"],
       properties: {
         author: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 30, description: "Author name the invited person will write as (lowercase letters, digits, hyphens), e.g. 'hanako'" },
         days: { type: "integer", minimum: 1, maximum: 30, description: "Days until the invite expires (default 7)" },
-        allow_existing: { type: "boolean", description: "Set true only to give an additional key to an author name that is already in use (same person, another agent)" },
+        allow_existing: { type: "boolean", description: "Set true only to give an additional key to an author name that is already in use (same person, another agent). Non-admins may do this only for their own author name." },
       },
     },
   },
   {
     name: "list_writers",
-    description: "Admin only. List admins, issued write keys (author, date, active or revoked) and unused invites. Never returns keys or codes.",
+    description: "List the people you invited: issued write keys (author, date, active or revoked) and your unused invites. Admins see everyone. Requires a write key. Never returns keys or codes.",
     inputSchema: { type: "object", properties: {} },
     annotations: { readOnlyHint: true },
   },
   {
     name: "revoke_writer",
-    description: "Admin only. Revoke all write keys issued by invite to an author and cancel their unused invites. Their published recipes stay.",
+    description: "Revoke the write keys of an author you invited and cancel their unused invites. Admins can revoke anyone invited. Requires a write key. Their published recipes stay.",
     inputSchema: { type: "object", required: ["author"], properties: { author: { type: "string" } } },
   },
 ] as const;

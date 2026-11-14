@@ -103,7 +103,10 @@ Cloudflareの My Profile → API Tokens で鍵を作り（権限：**Workers Scr
 - `CLOUDFLARE_API_TOKEN`：作った鍵
 - `CLOUDFLARE_ACCOUNT_ID`：Cloudflareの画面右側にあるアカウントID
 
-以後は、レシピが更新されるたびに確認とD1への写しが自動で行われます（`.github/workflows/sync.yml`）。サーバーのプログラムを変えた場合は、自動で公開し直されます（`deploy-worker.yml`）。
+以後は、レシピが更新されるたびに確認とD1への写しが自動で行われます（`.github/workflows/sync.yml`）。写しは、D1 の今の中身とファイルを比べて、違う行だけを書き換えます（`npm run db:sync:remote`）。同じなら何も書きません。サーバー経由の登録はその場で D1 にも書かれているので、ふつうは書き込みが発生しません。
+
+- 何が変わるかだけ見る：`npm run db:sync:remote -- --dry-run`
+- 丸ごと入れ直す（表が壊れたときなど）：`npm run db:load:remote`サーバーのプログラムを変えた場合は、自動で公開し直されます（`deploy-worker.yml`）。
 
 ### 4. AIにつなぐ
 

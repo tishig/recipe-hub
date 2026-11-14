@@ -11,7 +11,9 @@
     "db:init:local": "wrangler d1 migrations apply recipes --local",
     "db:init:remote": "wrangler d1 migrations apply recipes --remote",
     "db:load:local": "npm run build && wrangler d1 execute recipes --local --file=build/recipes.sql",
-    "db:load:remote": "npm run build && wrangler d1 execute recipes --remote --file=build/recipes.sql --yes"
+    "db:load:remote": "npm run build && wrangler d1 execute recipes --remote --file=build/recipes.sql --yes",
+    "db:sync:local": "tsx tools/sync.ts --local",
+    "db:sync:remote": "tsx tools/sync.ts --remote"
   },
   "dependencies": {
     "yaml": "^2.6.0"

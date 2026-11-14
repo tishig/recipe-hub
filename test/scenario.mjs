@@ -138,9 +138,9 @@ expect("オーブントースターなら互換表で作れると判定", found.
 
 // ---- 出典の念押し ----
 const SRC = [{ name: "例のサイト", url: "https://example.com/pie", accessed: "2026-11-07" }];
-r = await tool("add_recipe", { recipe: input({ title: "申告なし" }), outside_sources: undefined }, T);
+r = await tool("add_recipe", { recipe: input({ title: "申告なし", sources: [] }), outside_sources: undefined }, T);
 expect("出典の申告がない登録は断られる", !r.ok && r.text.includes("outside_sources") && r.text.includes("利用者に確認"), r.text);
-r = await tool("add_recipe", { recipe: input({ title: "出典が空" }), outside_sources: "listed" }, T);
+r = await tool("add_recipe", { recipe: input({ title: "出典が空", sources: [] }), outside_sources: "listed" }, T);
 expect("出典ありと申告して sources が空だと断られる", !r.ok && r.text.includes("sources が空"), r.text);
 r = await tool("add_recipe", { recipe: input({ title: "食い違い", sources: SRC }), outside_sources: "none" }, T);
 expect("出典なしと申告して sources があると断られる", !r.ok && r.text.includes('"listed"'), r.text);
@@ -149,7 +149,7 @@ expect("リンクのない出典は断られる", !r.ok && r.text.includes("url"
 r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（出典つき）", sources: SRC }), outside_sources: "listed" }, T);
 expect("出典つきで登録できる（念押しは付かない）", r.ok && !r.data.sources_note, r.text);
 const withSrc = r.data?.id;
-r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（自作）" }), outside_sources: "none" }, T);
+r = await tool("add_recipe", { recipe: input({ title: "ダッチアップルパイ（自作）", sources: [] }), outside_sources: "none" }, T);
 expect("自分で編み出したレシピは出典なしで登録でき、念押しが返る", r.ok && r.data.sources_note?.includes("update_recipe"), r.text);
 r = await tool("update_recipe", { id: withSrc, recipe: input({ title: "ダッチアップルパイ（出典つき）" }), change_note: "x", outside_sources: undefined }, T);
 expect("改訂でも出典の申告が要る", !r.ok && r.text.includes("outside_sources"), r.text);

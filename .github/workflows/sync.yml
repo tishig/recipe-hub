@@ -1,4 +1,4 @@
-# レシピが更新されたら: 様式を確認 → D1（Cloudflareのデータベース）に写す
+# レシピが更新されたら: 様式を確認 → D1（Cloudflareのデータベース）の、ファイルと違う行だけを書き換える
 name: check-and-sync
 on:
   push:
@@ -29,11 +29,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: npm run build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: |
-            d1 migrations apply recipes --remote
-            d1 execute recipes --remote --file=build/recipes.sql --yes
+          command: d1 migrations apply recipes --remote
+      # D1 の今の中身と比べて、足す・直す・消す行だけを書く（同じなら何も書かない）
+      - run: npm run db:sync:remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
